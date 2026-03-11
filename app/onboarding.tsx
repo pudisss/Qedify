@@ -2,20 +2,20 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
-  Dimensions,
-  Image,
-  ImageStyle,
-  Platform,
-  StyleSheet,
-  Text,
-  TextStyle,
-  TouchableOpacity,
-  View,
-  ViewStyle,
+    Dimensions,
+    Image,
+    ImageStyle,
+    Platform,
+    StyleSheet,
+    Text,
+    TextStyle,
+    TouchableOpacity,
+    View,
+    ViewStyle,
 } from "react-native";
 import {
-  SafeAreaView,
-  useSafeAreaInsets,
+    SafeAreaView,
+    useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
 // Design frame: 388 x 812
@@ -26,10 +26,8 @@ const { width: W, height: H } = Dimensions.get("window");
 const sw = (n: number) => (n / 388) * W;
 const sh = (n: number) => (n / 812) * H;
 
-const WORLD_IMG =
-  "https://www.figma.com/api/mcp/asset/bac5006e-e5b3-463c-93b3-5d7757d59068";
-const ROCKET_IMG =
-  "https://www.figma.com/api/mcp/asset/74a63414-09fb-4119-b3b0-ab2198191b88";
+const WORLD_IMG = require("../assets/images/world.png");
+const ROCKET_IMG = require("../assets/images/rocket.png");
 
 // Bottom panel height + bottom padding (fixed portion)
 const PANEL_DESIGN_H = 298.188 + 40;
@@ -59,17 +57,17 @@ export default function OnboardingScreen() {
       <StatusBar style="light" />
 
       <View style={s.illustration}>
+        <View style={[s.globeGlow, { top: pos.glowTop }]} />
         <Image
-          source={{ uri: WORLD_IMG }}
+          source={WORLD_IMG}
           style={[s.worldImage, { top: pos.worldTop, left: pos.worldLeft }]}
           resizeMode="cover"
         />
-        <View style={[s.globeGlow, { top: pos.glowTop }]} />
         <View style={[s.levelUpBadge, { top: pos.levelUpTop }]}>
           <Text style={s.levelUpText}>⭐ LEVEL UP</Text>
         </View>
         <Image
-          source={{ uri: ROCKET_IMG }}
+          source={ROCKET_IMG}
           style={[s.rocketImage, { top: pos.rocketTop }]}
           resizeMode="contain"
         />

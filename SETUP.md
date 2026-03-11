@@ -42,13 +42,13 @@ This will open the Expo DevTools in your terminal. From there you can:
 
 ## Available Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm start` | Start the Expo dev server |
-| `npm run android` | Start and open on Android |
-| `npm run ios` | Start and open on iOS |
-| `npm run web` | Start and open in web browser |
-| `npm run lint` | Run ESLint |
+| Command           | Description                   |
+| ----------------- | ----------------------------- |
+| `npm start`       | Start the Expo dev server     |
+| `npm run android` | Start and open on Android     |
+| `npm run ios`     | Start and open on iOS         |
+| `npm run web`     | Start and open in web browser |
+| `npm run lint`    | Run ESLint                    |
 
 ## Project Structure
 

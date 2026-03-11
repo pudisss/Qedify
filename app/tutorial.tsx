@@ -1,6 +1,7 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useCallback, useState } from "react";
 import {
     Dimensions,
     Platform,
@@ -12,6 +13,12 @@ import {
     View,
     ViewStyle,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: W } = Dimensions.get("window");
@@ -19,488 +26,594 @@ const sw = (n: number) => (n / 388) * W;
 
 const FONT_MONO = Platform.OS === "ios" ? "Courier New" : "monospace";
 
+// Slider config
+const SLIDER_TRACK_W = sw(186);
+const THUMB_SIZE = sw(16);
+const MASS_MIN = 100;
+const MASS_MAX = 1000;
+const VEL_MIN = 1;
+const VEL_MAX = 20;
+
+function clamp(val: number, min: number, max: number) {
+  "worklet";
+  return Math.min(Math.max(val, min), max);
+}
+
+function InteractiveSlider({
+  label,
+  unit,
+  color,
+  min,
+  max,
+  initial,
+  onValueChange,
+}: {
+  label: string;
+  unit: string;
+  color: string;
+  min: number;
+  max: number;
+  initial: number;
+  onValueChange: (v: number) => void;
+}) {
+  const initFrac = (initial - min) / (max - min);
+  const offsetX = useSharedValue(initFrac * SLIDER_TRACK_W);
+  const startX = useSharedValue(initFrac * SLIDER_TRACK_W);
+  const [displayVal, setDisplayVal] = useState(initial);
+
+  const updateVal = useCallback(
+    (px: number) => {
+      const frac = px / SLIDER_TRACK_W;
+      const raw = min + frac * (max - min);
+      const rounded = Math.round(raw);
+      setDisplayVal(rounded);
+      onValueChange(rounded);
+    },
+    [min, max, onValueChange],
+  );
+
+  const pan = Gesture.Pan()
+    .onStart(() => {
+      startX.value = offsetX.value;
+    })
+    .onUpdate((e) => {
+      const next = clamp(startX.value + e.translationX, 0, SLIDER_TRACK_W);
+      offsetX.value = next;
+      runOnJS(updateVal)(next);
+    })
+    .hitSlop({ top: 20, bottom: 20, left: 10, right: 10 });
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: offsetX.value - THUMB_SIZE / 2 }],
+  }));
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: offsetX.value,
+  }));
+
+  return (
+    <View style={s.sliderRow}>
+      <Text style={[s.sliderLabel, { color }]}>{label}</Text>
+      <View style={s.sliderTrackOuter}>
+        <View style={s.sliderTrackBg}>
+          <Animated.View
+            style={[s.sliderFill, { backgroundColor: color }, fillStyle]}
+          />
+          <GestureDetector gesture={pan}>
+            <Animated.View
+              style={[
+                s.sliderThumb,
+                { backgroundColor: color, borderColor: color },
+                thumbStyle,
+              ]}
+            />
+          </GestureDetector>
+        </View>
+      </View>
+      <Text style={[s.sliderValText, { color }]}>
+        {displayVal}
+        <Text style={s.sliderUnit}>{unit}</Text>
+      </Text>
+    </View>
+  );
+}
+
 export default function TutorialScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [mass, setMass] = useState(600);
+  const [velocity, setVelocity] = useState(8);
+  const momentum = mass * velocity;
 
   return (
     <View style={s.container}>
       <StatusBar style="light" />
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: sw(30) }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Header ── */}
-        <View style={[s.header, { paddingTop: insets.top + sw(12) }]}>
-          <View style={s.headerRow}>
-            <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
-              <Text style={s.backArrow}>{"\u2190"}</Text>
-            </TouchableOpacity>
-            <View style={s.headerCenter}>
-              <Text style={s.headerTitle}>PRE-MISSION BRIEFING</Text>
-              <Text style={s.headerSub}>Understanding Momentum Vectors</Text>
-            </View>
-            <View style={s.progressPill}>
-              <Text style={s.progressText}>2/5</Text>
-            </View>
-          </View>
 
-          {/* Progress bar */}
-          <View style={s.progressBarBg}>
-            <LinearGradient
-              colors={["#00c8ff", "#5b45e0"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[s.progressBarFill, { width: "40%" }]}
-            />
+      {/* ── Header ── */}
+      <View style={[s.header, { paddingTop: insets.top }]}>
+        <View style={s.headerRow}>
+          <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
+            <Text style={s.backArrow}>{"\u2190"}</Text>
+          </TouchableOpacity>
+          <View style={s.headerCenter}>
+            <Text style={s.headerTitle}>PRE-MISSION BRIEFING</Text>
+            <Text style={s.headerSub}>Understanding Momentum Vectors</Text>
+          </View>
+          <View style={s.progressPill}>
+            <Text style={s.progressText}>2 / 5</Text>
           </View>
         </View>
+      </View>
 
+      {/* Progress bar */}
+      <View style={s.progressBarWrap}>
+        <View style={s.progressBarBg}>
+          <LinearGradient
+            colors={["#00c8ff", "#00ffd5"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[s.progressBarFill, { width: "40%" }]}
+          />
+        </View>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* ── Momentum Formula Card ── */}
-        <View style={s.cardWrap}>
-          <View style={s.card}>
-            <View style={s.cardHeader}>
-              <Text style={s.cardHeaderText}>MOMENTUM FORMULA</Text>
-            </View>
-            <View style={s.formulaBox}>
-              <Text style={s.formulaMain}>
-                p{"\u20D7"} = m {"\u00B7"} v{"\u20D7"}
-              </Text>
-            </View>
-            <Text style={s.formulaDesc}>
-              Momentum is a <Text style={s.highlight}>vector quantity</Text>{" "}
-              {"\u2014"} it has both magnitude and direction. The direction of
-              momentum is always the same as the direction of velocity.
+        <View style={s.card}>
+          <Text style={s.cardTitle}>MOMENTUM FORMULA</Text>
+          <View style={s.formulaBox}>
+            <Text style={s.formulaMain}>
+              p{"\u20D7"} = m {"\u00B7"} v{"\u20D7"}
+            </Text>
+            <Text style={s.formulaSub}>
+              momentum = mass × velocity · Direction matters!
             </Text>
           </View>
+          <Text style={s.cardBody}>
+            Momentum is a <Text style={s.bold}>vector quantity</Text> — it has
+            both magnitude and direction. Doubling mass or velocity doubles the
+            momentum.{" "}
+          </Text>
         </View>
 
         {/* ── Vector Diagram Card ── */}
-        <View style={s.cardWrap}>
-          <View style={s.card}>
-            <View style={s.cardHeader}>
-              <Text style={s.cardHeaderText}>VECTOR DIAGRAM</Text>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>VECTOR DIAGRAM</Text>
+          <View style={s.diagramBox}>
+            {/* Object A */}
+            <View style={s.objA}>
+              <Text style={s.objLabel}>A</Text>
+              <Text style={s.objMass}>2000 kg</Text>
             </View>
-
-            <View style={s.diagramWrap}>
-              {/* Object A */}
-              <View style={s.diagramObj}>
-                <View style={s.objectCircle}>
-                  <Text style={s.objectEmoji}>{"\uD83D\uDE80"}</Text>
-                </View>
-                <Text style={s.objectLabel}>Object A</Text>
-                <Text style={s.objectMass}>2,000 kg</Text>
-              </View>
-
-              {/* Arrow */}
-              <View style={s.arrowWrap}>
+            {/* Arrow */}
+            <View style={s.arrowWrap}>
+              <Text style={s.arrowVLabel}>v = 10 m/s →</Text>
+              <View style={s.arrowRow}>
                 <View style={s.arrowLine} />
-                <Text style={s.arrowHead}>{"\u25B6"}</Text>
-                <Text style={s.arrowLabel}>v = 10 m/s {"\u2192"}</Text>
-              </View>
-
-              {/* Object B */}
-              <View style={s.diagramObj}>
-                <View
-                  style={[
-                    s.objectCircle,
-                    { backgroundColor: "rgba(255,71,87,0.15)" },
-                  ]}
-                >
-                  <Text style={s.objectEmoji}>{"\u2B50"}</Text>
-                </View>
-                <Text style={s.objectLabel}>Object B</Text>
-                <Text style={s.objectMass}>500 kg</Text>
+                <View style={s.arrowHead} />
               </View>
             </View>
-
-            <View style={s.momentumResult}>
-              <Text style={s.momentumLabel}>
-                p{"\u20D7"}_A = m {"\u00D7"} v
-              </Text>
-              <Text style={s.momentumValue}>
-                p{"\u20D7"}_A = 20,000 kg{"\u00B7"}m/s
-              </Text>
+            {/* Object B */}
+            <View style={s.objB}>
+              <Text style={s.objLabelB}>B</Text>
+              <Text style={s.objMassB}>500 kg</Text>
             </View>
           </View>
+          <Text style={s.diagramResult}>p_A = 20,000 kg·m/s</Text>
         </View>
 
         {/* ── Try It Yourself Card ── */}
-        <View style={s.cardWrap}>
-          <View style={s.card}>
-            <View style={s.cardHeader}>
-              <Text style={s.cardHeaderText}>TRY IT YOURSELF</Text>
-            </View>
-
-            {/* Mass slider */}
-            <View style={s.sliderGroup}>
-              <Text style={s.sliderLabel}>MASS (kg)</Text>
-              <View style={s.sliderTrack}>
-                <View style={[s.sliderFill, { width: "60%" }]} />
-                <View style={[s.sliderThumb, { left: "58%" }]} />
-              </View>
-              <Text style={s.sliderValue}>m = 600 kg</Text>
-            </View>
-
-            {/* Velocity slider */}
-            <View style={s.sliderGroup}>
-              <Text style={s.sliderLabel}>VELOCITY (m/s)</Text>
-              <View style={s.sliderTrack}>
-                <View style={[s.sliderFill, { width: "40%" }]} />
-                <View style={[s.sliderThumb, { left: "38%" }]} />
-              </View>
-              <Text style={s.sliderValue}>v = 8 m/s</Text>
-            </View>
-
-            {/* Result */}
-            <View style={s.tryResultBox}>
-              <Text style={s.tryResultLabel}>MOMENTUM</Text>
-              <Text style={s.tryResultValue}>
-                p{"\u20D7"} = 4,800 kg{"\u00B7"}m/s
+        <View style={s.card}>
+          <Text style={s.cardTitle}>🧪 TRY IT YOURSELF</Text>
+          <View style={s.tryBox}>
+            <InteractiveSlider
+              label="m"
+              unit="kg"
+              color="#00c8ff"
+              min={MASS_MIN}
+              max={MASS_MAX}
+              initial={600}
+              onValueChange={setMass}
+            />
+            <InteractiveSlider
+              label="v"
+              unit="m/s"
+              color="#00ffd5"
+              min={VEL_MIN}
+              max={VEL_MAX}
+              initial={8}
+              onValueChange={setVelocity}
+            />
+            <View style={s.momentumRow}>
+              <Text style={s.momentumLabel}>p⃗ =</Text>
+              <Text style={s.momentumValue}>
+                {momentum.toLocaleString()}{" "}
+                <Text style={s.momentumUnit}>kg·m/s</Text>
               </Text>
             </View>
           </View>
         </View>
 
         {/* ── Tip Box ── */}
-        <View style={s.cardWrap}>
-          <View style={s.tipBox}>
-            <Text style={s.tipEmoji}>{"\uD83D\uDCA1"}</Text>
-            <Text style={s.tipText}>
-              Remember: Direction is everything in momentum problems. Two
-              objects with the same speed but opposite directions have opposite
-              momenta!
-            </Text>
-          </View>
+        <View style={s.tipBox}>
+          <Text style={s.tipEmoji}>💡</Text>
+          <Text style={s.tipText}>
+            <Text style={s.tipBold}>Remember:</Text> Direction is everything in
+            momentum problems. A spacecraft moving left has negative momentum
+            compared to one moving right!
+          </Text>
         </View>
 
         {/* ── Continue Button ── */}
-        <View style={s.cardWrap}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push("/orbital-rescue")}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => router.push("/orbital-rescue")}
+        >
+          <LinearGradient
+            colors={["#00c8ff", "#0d4eaa"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={s.continueBtn}
           >
-            <LinearGradient
-              colors={["#00c8ff", "#0d4eaa"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={s.continueBtn}
-            >
-              <Text style={s.continueBtnText}>
-                NEXT: Impulse {"\u2192"} CONTINUE
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+            <Text style={s.continueBtnText}>NEXT: Impulse → CONTINUE</Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
 }
 
-type Styles = {
-  container: ViewStyle;
-  header: ViewStyle;
-  headerRow: ViewStyle;
-  backArrow: TextStyle;
-  headerCenter: ViewStyle;
-  headerTitle: TextStyle;
-  headerSub: TextStyle;
-  progressPill: ViewStyle;
-  progressText: TextStyle;
-  progressBarBg: ViewStyle;
-  progressBarFill: ViewStyle;
-  cardWrap: ViewStyle;
-  card: ViewStyle;
-  cardHeader: ViewStyle;
-  cardHeaderText: TextStyle;
-  formulaBox: ViewStyle;
-  formulaMain: TextStyle;
-  formulaDesc: TextStyle;
-  highlight: TextStyle;
-  diagramWrap: ViewStyle;
-  diagramObj: ViewStyle;
-  objectCircle: ViewStyle;
-  objectEmoji: TextStyle;
-  objectLabel: TextStyle;
-  objectMass: TextStyle;
-  arrowWrap: ViewStyle;
-  arrowLine: ViewStyle;
-  arrowHead: TextStyle;
-  arrowLabel: TextStyle;
-  momentumResult: ViewStyle;
-  momentumLabel: TextStyle;
-  momentumValue: TextStyle;
-  sliderGroup: ViewStyle;
-  sliderLabel: TextStyle;
-  sliderTrack: ViewStyle;
-  sliderFill: ViewStyle;
-  sliderThumb: ViewStyle;
-  sliderValue: TextStyle;
-  tryResultBox: ViewStyle;
-  tryResultLabel: TextStyle;
-  tryResultValue: TextStyle;
-  tipBox: ViewStyle;
-  tipEmoji: TextStyle;
-  tipText: TextStyle;
-  continueBtn: ViewStyle;
-  continueBtnText: TextStyle;
-};
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#060d1f" } as ViewStyle,
 
-const s = StyleSheet.create<Styles>({
-  container: { flex: 1, backgroundColor: "#060d1f" },
-
-  /* Header */
+  /* ── Header ── */
   header: {
-    paddingHorizontal: sw(16),
-    paddingBottom: sw(12),
-    backgroundColor: "rgba(6,13,31,0.95)",
+    flexDirection: "column",
+    paddingHorizontal: sw(20),
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,200,255,0.2)",
-  },
+    paddingBottom: sw(12),
+  } as ViewStyle,
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: sw(10),
-  },
-  backArrow: { fontSize: sw(22), color: "#e8f4ff", marginRight: sw(10) },
-  headerCenter: { flex: 1 },
+    gap: sw(12),
+    height: sw(50),
+  } as ViewStyle,
+  backArrow: {
+    fontSize: sw(20),
+    color: "#00c8ff",
+  } as TextStyle,
+  headerCenter: { flex: 1 } as ViewStyle,
   headerTitle: {
     fontFamily: FONT_MONO,
-    fontSize: sw(12),
-    color: "#00c8ff",
+    fontSize: sw(14),
+    color: "#e8f4ff",
     letterSpacing: 2,
-  },
+  } as TextStyle,
   headerSub: {
     fontSize: sw(11),
     color: "#8899aa",
-    marginTop: 2,
-  },
+    marginTop: 1,
+  } as TextStyle,
   progressPill: {
-    backgroundColor: "rgba(0,200,255,0.15)",
     borderWidth: 1,
-    borderColor: "rgba(0,200,255,0.3)",
-    borderRadius: 12,
-    paddingHorizontal: sw(10),
-    paddingVertical: sw(4),
-  },
+    borderColor: "#00c8ff",
+    borderRadius: sw(20),
+    paddingHorizontal: sw(15),
+    paddingVertical: sw(7),
+  } as ViewStyle,
   progressText: {
     fontFamily: FONT_MONO,
     fontSize: sw(12),
     color: "#00c8ff",
-  },
+    letterSpacing: 1,
+  } as TextStyle,
+
+  /* ── Progress Bar ── */
+  progressBarWrap: {
+    paddingHorizontal: sw(40),
+    paddingTop: 0,
+  } as ViewStyle,
   progressBarBg: {
     height: sw(4),
     backgroundColor: "rgba(0,200,255,0.15)",
-    borderRadius: 2,
-  },
+    borderRadius: sw(2),
+    overflow: "hidden",
+  } as ViewStyle,
   progressBarFill: {
     height: sw(4),
-    borderRadius: 2,
-  },
+    borderRadius: sw(2),
+    shadowColor: "#00c8ff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 4,
+  } as ViewStyle,
 
-  /* Cards */
-  cardWrap: { paddingHorizontal: sw(20), marginTop: sw(16) },
+  /* ── Scroll ── */
+  scrollContent: {
+    paddingHorizontal: sw(20),
+    paddingTop: sw(20),
+    paddingBottom: sw(40),
+    gap: sw(16),
+  } as ViewStyle,
+
+  /* ── Cards ── */
   card: {
-    backgroundColor: "rgba(0,200,255,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(0,200,255,0.15)",
-    borderRadius: sw(16),
-    overflow: "hidden",
-  },
-  cardHeader: {
-    backgroundColor: "rgba(0,200,255,0.1)",
-    paddingVertical: sw(10),
-    paddingHorizontal: sw(15),
-  },
-  cardHeaderText: {
-    fontFamily: FONT_MONO,
-    fontSize: sw(10),
-    color: "#00c8ff",
-    letterSpacing: 2,
-  },
-
-  /* Formula */
-  formulaBox: {
-    alignItems: "center",
-    paddingVertical: sw(20),
-    marginHorizontal: sw(15),
-    marginTop: sw(12),
-    backgroundColor: "rgba(0,200,255,0.08)",
-    borderRadius: sw(12),
+    backgroundColor: "rgba(10,22,40,0.85)",
     borderWidth: 1,
     borderColor: "rgba(0,200,255,0.2)",
-  },
+    borderRadius: sw(18),
+    paddingTop: sw(21),
+    paddingHorizontal: sw(21),
+    paddingBottom: sw(16),
+  } as ViewStyle,
+  cardTitle: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(12),
+    color: "#00c8ff",
+    letterSpacing: 2,
+    marginBottom: sw(12),
+  } as TextStyle,
+
+  /* ── Formula ── */
+  formulaBox: {
+    backgroundColor: "rgba(0,200,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(0,200,255,0.2)",
+    borderRadius: sw(12),
+    paddingVertical: sw(17),
+    paddingHorizontal: sw(17),
+    alignItems: "center",
+    gap: sw(6),
+  } as ViewStyle,
   formulaMain: {
     fontFamily: FONT_MONO,
-    fontSize: sw(28),
-    color: "#e8f4ff",
-    fontWeight: "bold",
-  },
-  formulaDesc: {
+    fontSize: sw(22),
+    color: "#00eeff",
+    textAlign: "center",
+    letterSpacing: 4,
+  } as TextStyle,
+  formulaSub: {
+    fontSize: sw(11),
+    color: "#8899aa",
+    textAlign: "center",
+  } as TextStyle,
+  cardBody: {
     fontSize: sw(13),
     color: "#8899aa",
-    lineHeight: sw(20),
-    paddingHorizontal: sw(15),
-    paddingVertical: sw(12),
-  },
-  highlight: { color: "#00c8ff", fontWeight: "bold" },
+    lineHeight: sw(22),
+    marginTop: sw(12),
+  } as TextStyle,
+  bold: {
+    fontWeight: "bold",
+    color: "#e8f4ff",
+  } as TextStyle,
 
-  /* Vector Diagram */
-  diagramWrap: {
+  /* ── Vector Diagram ── */
+  diagramBox: {
+    backgroundColor: "rgba(5,10,25,0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(0,200,255,0.2)",
+    borderRadius: sw(12),
+    height: sw(140),
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
-    paddingVertical: sw(20),
-    paddingHorizontal: sw(10),
-  },
-  diagramObj: { alignItems: "center" },
-  objectCircle: {
-    width: sw(56),
-    height: sw(56),
-    borderRadius: sw(28),
+    paddingHorizontal: sw(20),
+  } as ViewStyle,
+  objA: {
     backgroundColor: "rgba(0,200,255,0.15)",
     borderWidth: 1,
-    borderColor: "rgba(0,200,255,0.3)",
-    alignItems: "center",
+    borderColor: "#00c8ff",
+    borderRadius: sw(8),
+    width: sw(72),
+    height: sw(46),
     justifyContent: "center",
-  },
-  objectEmoji: { fontSize: sw(24) },
-  objectLabel: {
+    paddingLeft: sw(14),
+  } as ViewStyle,
+  objLabel: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(12),
+    color: "#00c8ff",
+  } as TextStyle,
+  objMass: {
     fontFamily: FONT_MONO,
     fontSize: sw(10),
     color: "#00c8ff",
-    marginTop: sw(6),
-    letterSpacing: 1,
-  },
-  objectMass: {
-    fontSize: sw(12),
-    color: "#8899aa",
     marginTop: 2,
-  },
-  arrowWrap: { alignItems: "center", paddingHorizontal: sw(8) },
-  arrowLine: {
-    width: sw(40),
-    height: 2,
-    backgroundColor: "#00c8ff",
-    marginBottom: sw(4),
-  },
-  arrowHead: { fontSize: sw(10), color: "#00c8ff", marginTop: -sw(6) },
-  arrowLabel: {
+  } as TextStyle,
+  arrowWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  } as ViewStyle,
+  arrowVLabel: {
     fontFamily: FONT_MONO,
     fontSize: sw(10),
-    color: "#e8f4ff",
-    marginTop: sw(4),
-  },
-  momentumResult: {
-    paddingHorizontal: sw(15),
-    paddingBottom: sw(15),
-  },
+    color: "#00c8ff",
+    marginBottom: sw(4),
+  } as TextStyle,
+  arrowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  } as ViewStyle,
+  arrowLine: {
+    flex: 1,
+    height: sw(3),
+    backgroundColor: "#00c8ff",
+    shadowColor: "#00c8ff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 4,
+  } as ViewStyle,
+  arrowHead: {
+    width: 0,
+    height: 0,
+    borderTopWidth: sw(6),
+    borderBottomWidth: sw(6),
+    borderLeftWidth: sw(10),
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    borderLeftColor: "#00c8ff",
+  } as ViewStyle,
+  objB: {
+    backgroundColor: "rgba(0,200,255,0.15)",
+    borderWidth: 1,
+    borderColor: "#ffa827",
+    borderRadius: sw(8),
+    width: sw(66),
+    height: sw(46),
+    justifyContent: "center",
+    paddingLeft: sw(14),
+  } as ViewStyle,
+  objLabelB: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(12),
+    color: "#ffa827",
+  } as TextStyle,
+  objMassB: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(10),
+    color: "#ffa827",
+    marginTop: 2,
+  } as TextStyle,
+  diagramResult: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(10),
+    color: "#8899aa",
+    marginTop: sw(12),
+  } as TextStyle,
+
+  /* ── Try It Yourself ── */
+  tryBox: {
+    backgroundColor: "rgba(5,10,25,0.9)",
+    borderWidth: 1,
+    borderColor: "rgba(0,200,255,0.2)",
+    borderRadius: sw(12),
+    paddingVertical: sw(17),
+    paddingLeft: sw(17),
+    paddingRight: sw(10),
+    gap: sw(10),
+  } as ViewStyle,
+  sliderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: sw(16),
+  } as ViewStyle,
+  sliderLabel: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(11),
+    width: sw(30),
+  } as TextStyle,
+  sliderTrackOuter: {
+    flex: 1,
+  } as ViewStyle,
+  sliderTrackBg: {
+    height: sw(4),
+    backgroundColor: "rgba(0,200,255,0.15)",
+    borderRadius: sw(2),
+    justifyContent: "center",
+  } as ViewStyle,
+  sliderFill: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    height: sw(4),
+    borderRadius: sw(2),
+  } as ViewStyle,
+  sliderThumb: {
+    position: "absolute",
+    top: sw(-6),
+    left: 0,
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
+    borderWidth: 2,
+  } as ViewStyle,
+  sliderValText: {
+    fontFamily: FONT_MONO,
+    fontSize: sw(12),
+    textAlign: "right",
+    width: sw(50),
+  } as TextStyle,
+  sliderUnit: {
+    fontSize: sw(9),
+  } as TextStyle,
+  momentumRow: {
+    backgroundColor: "rgba(0,200,255,0.08)",
+    borderRadius: sw(8),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: sw(14),
+    paddingVertical: sw(10),
+    marginRight: sw(7),
+  } as ViewStyle,
   momentumLabel: {
     fontFamily: FONT_MONO,
     fontSize: sw(11),
     color: "#8899aa",
-  },
+  } as TextStyle,
   momentumValue: {
     fontFamily: FONT_MONO,
-    fontSize: sw(16),
-    color: "#00ff9f",
+    fontSize: sw(18),
+    color: "#00eeff",
     fontWeight: "bold",
-    marginTop: 2,
-  },
-
-  /* Sliders */
-  sliderGroup: {
-    paddingHorizontal: sw(15),
-    marginTop: sw(14),
-  },
-  sliderLabel: {
+  } as TextStyle,
+  momentumUnit: {
     fontFamily: FONT_MONO,
-    fontSize: sw(10),
+    fontSize: sw(12),
     color: "#8899aa",
-    letterSpacing: 1,
-    marginBottom: sw(8),
-  },
-  sliderTrack: {
-    height: sw(6),
-    backgroundColor: "rgba(0,200,255,0.15)",
-    borderRadius: 3,
-    position: "relative",
-  },
-  sliderFill: {
-    height: sw(6),
-    backgroundColor: "#00c8ff",
-    borderRadius: 3,
-  },
-  sliderThumb: {
-    position: "absolute",
-    top: -sw(5),
-    width: sw(16),
-    height: sw(16),
-    borderRadius: sw(8),
-    backgroundColor: "#00c8ff",
-    borderWidth: 2,
-    borderColor: "#e8f4ff",
-  },
-  sliderValue: {
-    fontFamily: FONT_MONO,
-    fontSize: sw(14),
-    color: "#e8f4ff",
-    marginTop: sw(10),
-  },
+    fontWeight: "normal",
+  } as TextStyle,
 
-  tryResultBox: {
-    margin: sw(15),
-    padding: sw(14),
-    backgroundColor: "rgba(0,255,159,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(0,255,159,0.3)",
-    borderRadius: sw(12),
-    alignItems: "center",
-  },
-  tryResultLabel: {
-    fontFamily: FONT_MONO,
-    fontSize: sw(10),
-    color: "#8899aa",
-    letterSpacing: 2,
-  },
-  tryResultValue: {
-    fontFamily: FONT_MONO,
-    fontSize: sw(20),
-    color: "#00ff9f",
-    fontWeight: "bold",
-    marginTop: sw(4),
-  },
-
-  /* Tip */
+  /* ── Tip ── */
   tipBox: {
     flexDirection: "row",
-    backgroundColor: "rgba(255,168,39,0.1)",
+    backgroundColor: "rgba(255,168,39,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,168,39,0.3)",
-    borderRadius: sw(14),
-    padding: sw(14),
+    borderColor: "rgba(255,168,39,0.2)",
+    borderRadius: sw(10),
+    paddingVertical: sw(13),
+    paddingHorizontal: sw(13),
+    gap: sw(10),
     alignItems: "flex-start",
-  },
-  tipEmoji: { fontSize: sw(18), marginRight: sw(10) },
+  } as ViewStyle,
+  tipEmoji: {
+    fontSize: sw(18),
+  } as TextStyle,
   tipText: {
     flex: 1,
-    fontSize: sw(13),
-    color: "#e8f4ff",
-    lineHeight: sw(20),
-  },
+    fontSize: sw(12),
+    color: "rgba(232,244,255,0.8)",
+    lineHeight: sw(19),
+  } as TextStyle,
+  tipBold: {
+    fontWeight: "bold",
+    color: "#ffa827",
+  } as TextStyle,
 
-  /* Continue */
+  /* ── Continue ── */
   continueBtn: {
     borderRadius: sw(14),
     height: sw(51),
     alignItems: "center",
     justifyContent: "center",
-  },
+    shadowColor: "#00c8ff",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: sw(28),
+    elevation: 10,
+  } as ViewStyle,
   continueBtnText: {
-    fontFamily: FONT_MONO,
-    fontSize: sw(14),
-    color: "#e8f4ff",
     fontWeight: "bold",
+    fontSize: sw(14),
+    color: "#ffffff",
     letterSpacing: 1,
-  },
+  } as TextStyle,
 });
